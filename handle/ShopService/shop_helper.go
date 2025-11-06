@@ -43,11 +43,11 @@ func setShopTypeListToCache(shopTypeList []*model.TbShopType) error {
 		return err
 	}
 	//调用 Err() 用于获取命令执行过程中可能出现的错误
-	return db.RedisDb.LPush(context.Background(), shopTypeKey+":list", string(b)).Err()
+	return db.RedisDb.LPush(context.Background(), shopKeyPrefix+shopTypeKey+":list", string(b)).Err()
 }
 
 func getShopTypeListFromCache() (*model.TbShopType, error) {
-	res, err := db.RedisDb.LRange(context.Background(), shopTypeKey+":list", 0, -1).Result()
+	res, err := db.RedisDb.LRange(context.Background(), shopKeyPrefix+shopTypeKey+":list", 0, -1).Result()
 	if res == nil || err != nil {
 		fmt.Print("商户类型Cache未命中")
 		return nil, err

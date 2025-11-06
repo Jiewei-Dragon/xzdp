@@ -32,12 +32,17 @@ type userResponse struct {
 	Icon     string `json:"icon"`
 }
 
+// 修改昵称请求结构体
+type updateNickNameReq struct {
+	NickName string `json:"nickName" binding:"required,min=1,max=15"` // 昵称，1-20个字符
+}
+
 const (
 	userPrefix       = "cache:user"
 	phoneKeyPrefix   = ":phone"
 	inforKeyPrefix   = ":info"
 	codeExpiration   = 3 * time.Minute
-	userInfoCacheTTL = 2 * time.Minute
+	userInfoCacheTTL = 10 * time.Minute
 )
 
 var phoneRe = regexp.MustCompile(`^1[3-9]\d{9}$`)
@@ -185,6 +190,37 @@ func GetUserInfoById(c *gin.Context) {
 		NickName: user.NickName,
 		Icon:     user.Icon,
 	})
+}
+
+func EditNickname(c *gin.Context) {
+	//1. 从上下文获取用户ID
+	userId := c.GetInt64(middleware.CtxKeyUserId)
+
+	//2. 绑定请求参数（使用专门的请求结构体，匹配前端的 nickName 字段）
+	var req updateNickNameReq
+	err := c.ShouldBindJSON(&req)
+	if err != nil {
+		response.Error(c, response.ErrValidation, "请求参数格式错误")
+		return
+	}
+	if len(req.NickName) < 1 || len(req.NickName) > 15 {
+		response.Error(c, response.ErrValidation, "昵称长度不合规，请重试")
+		return
+	}
+
+	//4. 更新数据库
+	user := &model.TbUser{
+		ID:       uint64(userId),
+		NickName: req.NickName,
+		Phone:    c.GetString(middleware.CtxKeyUserPhone),
+	}
+	err = UpdateUserInfoById(user)
+	if err != nil {
+		response.HandleBusinessError(c, err)
+		return
+	}
+	deleteUserInfoFromCache(middleware.CtxKeyUserId)
+	response.Success(c, gin.H{"message": "昵称修改成功"})
 }
 
 func Logout(c *gin.Context) {

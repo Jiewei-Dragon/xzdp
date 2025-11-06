@@ -29,7 +29,7 @@
         </div>
       </div>
       <div class="divider"></div>
-      <div class="info-item">
+      <div class="info-item" @click="editNickName">
         <div class="info-label">昵称</div>
         <div class="info-btn">
           <div>{{user.nickName}}</div>
@@ -124,6 +124,33 @@
           this.$message.error(err);
           setTimeout(() => location.href = "login.html", 1000)
         })
+      },
+      editNickName() {
+        // 弹出输入框让用户输入新昵称
+        this.$prompt('请输入新昵称', '修改昵称', {
+          confirmButtonText: '确定',
+          cancelButtonText: '取消',
+          inputPattern: /^.{1,20}$/,
+          inputErrorMessage: '昵称长度应在1-20个字符之间',
+          inputValue: this.user.nickName
+        }).then(({ value }) => {
+          // 调用修改昵称接口
+          axios.put("/user/nickname", { nickName: value })
+            .then(({data}) => {
+              this.$message.success("昵称修改成功");
+              // 更新本地用户信息
+              this.user.nickName = value;
+              // 更新 sessionStorage 中的用户信息
+              const userInfo = JSON.parse(sessionStorage.getItem("user") || "{}");
+              userInfo.nickName = value;
+              sessionStorage.setItem("user", JSON.stringify(userInfo));
+            })
+            .catch(err => {
+              this.$message.error(err || "修改失败，请重试");
+            })
+        }).catch(() => {
+          // 用户取消输入
+        });
       },
       goBack(){
         history.back();

@@ -17,6 +17,11 @@ func getUserByIdFromDb(id int64) (*model.TbUser, error) {
 	return userQuery.Where(userQuery.ID.Eq(uint64(id))).First()
 }
 
+func UpdateUserInfoById(user *model.TbUser) error {
+	userQuery := query.TbUser
+	return userQuery.Save(user)
+}
+
 func getUserByIdFromCache(id string) (*model.TbUser, error) {
 	res, err := db.RedisDb.Get(context.Background(), userPrefix+inforKeyPrefix+":"+id).Result()
 	if res == "" || err != nil {

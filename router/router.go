@@ -61,6 +61,7 @@ func NewRouter() *gin.Engine {
 		////每次点击个人信息页时获取用户信息
 		auth.GET("/user/info/:userId", UserService.GetUserInfoById)
 		auth.POST("/user/logout", UserService.Logout)
+		auth.PUT("user/nickname", UserService.EditNickname)
 	}
 	r.StaticFile("/index.html", filepath.Join(staticDir, "index.html"))
 	r.StaticFile("/login.html", filepath.Join(staticDir, "login.html"))
