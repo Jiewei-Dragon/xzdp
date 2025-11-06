@@ -1,0 +1,46 @@
+# 编译输出
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go 工作空间文件
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 日志文件
+*.log
+xzdp.log
+
+# 配置文件（包含敏感信息，但保留模板）
+# configs/config.yaml
+
+# 数据库文件
+*.db
+*.sqlite
+*.sqlite3
+
+# 临时文件
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# Nginx 日志和临时文件
+nginx-1.18.0/logs/
+nginx-1.18.0/temp/
+nginx-1.18.0/client_body_temp/
+
+# 用户上传的图片（博客图片等）
+nginx-1.18.0/html/hmdp/imgs/blogs/
+
+# 环境变量文件
+.env
+.env.local
+
