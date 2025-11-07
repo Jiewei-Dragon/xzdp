@@ -219,7 +219,7 @@ func EditNickname(c *gin.Context) {
 		response.HandleBusinessError(c, err)
 		return
 	}
-	deleteUserInfoFromCache(middleware.CtxKeyUserId)
+	deleteUserInfoFromCache(strconv.FormatInt(userId, 10))
 	response.Success(c, gin.H{"message": "昵称修改成功"})
 }
 
