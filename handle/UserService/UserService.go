@@ -193,11 +193,12 @@ func GetUserInfoById(c *gin.Context) {
 }
 
 func EditNickname(c *gin.Context) {
-	//1. 从上下文获取用户ID
+	//1. 从上下文中获取用户ID
 	userId := c.GetInt64(middleware.CtxKeyUserId)
 
 	//2. 绑定请求参数（使用专门的请求结构体，匹配前端的 nickName 字段）
 	var req updateNickNameReq
+	//2.1 从请求体中获取新昵称
 	err := c.ShouldBindJSON(&req)
 	if err != nil {
 		response.Error(c, response.ErrValidation, "请求参数格式错误")

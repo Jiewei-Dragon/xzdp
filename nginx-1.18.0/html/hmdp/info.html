@@ -120,6 +120,14 @@
       this.queryUser();
       this.checkLogin();
     },
+    mounted() {
+      // 监听页面显示事件，当从其他页面返回时重新查询用户信息
+      window.addEventListener('pageshow', this.handlePageShow);
+    },
+    beforeDestroy() {
+      // 清理事件监听
+      window.removeEventListener('pageshow', this.handlePageShow);
+    },
     methods:
     {
       checkLogin()
@@ -250,6 +258,12 @@
           this.queryBlogsOfFollow();
         } else {
           this.isReachBottom = false
+        }
+      },
+      handlePageShow(event) {
+        // 如果是从浏览器缓存中恢复的页面，重新查询用户信息
+        if (event.persisted || (window.performance && window.performance.navigation.type === 2)) {
+          this.queryUser();
         }
       }
     },

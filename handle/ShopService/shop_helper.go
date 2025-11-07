@@ -2,7 +2,7 @@ package ShopService
 
 import (
 	"context"
-	"fmt"
+	"strconv"
 	"xzdp/dal/model"
 	"xzdp/dal/query"
 	"xzdp/db"
@@ -46,10 +46,14 @@ func setShopTypeListToCache(shopTypeList []*model.TbShopType) error {
 	return db.RedisDb.LPush(context.Background(), shopKeyPrefix+shopTypeKey+":list", string(b)).Err()
 }
 
+func setHotBlogToCache(TbBlogList []*model.TbBlog) error {
+	// TODO: 实现缓存写入逻辑
+	return nil
+}
+
 func getShopTypeListFromCache() (*model.TbShopType, error) {
 	res, err := db.RedisDb.LRange(context.Background(), shopKeyPrefix+shopTypeKey+":list", 0, -1).Result()
 	if res == nil || err != nil {
-		fmt.Print("商户类型Cache未命中")
 		return nil, err
 	}
 	var types model.TbShopType
@@ -59,4 +63,32 @@ func getShopTypeListFromCache() (*model.TbShopType, error) {
 		return nil, err
 	}
 	return &types, nil
+}
+
+func getBlogByPageNumFromCache(pageNum string) (*model.TbBlog, error) {
+	Num, err := strconv.Atoi(pageNum)
+	startNum, endNum := (Num-1)*10, Num*10-1
+	//LRange返回的是[]string
+	res, err := db.RedisDb.LRange(context.Background(), shopKeyPrefix+HotBlog, int64(startNum), int64(endNum)).Result()
+	if len(res) < 1 || err != nil {
+		return nil, err
+	}
+	var blogs model.TbBlog
+	//把cache结果反序列化为指定结构体
+	err = sonic.Unmarshal([]byte(res[0]), &blogs)
+	if err != nil {
+		return nil, err
+	}
+	return &blogs, nil
+}
+
+func getBlogByPageNumFromDB(pageNum string) ([]*model.TbBlog, error) {
+	Num, err := strconv.Atoi(pageNum)
+	if err != nil {
+		return nil, err
+	}
+	pageSize := 10 // 每页10条
+	offset := (Num - 1) * pageSize
+	TbBlogQuery := query.TbBlog
+	return TbBlogQuery.Order(TbBlogQuery.Liked).Offset(offset).Limit(pageSize).Find()
 }

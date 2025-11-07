@@ -14,6 +14,7 @@ const (
 	shopKeyPrefix    = "cache:shop"
 	shopCacheTTL     = 30 * 60
 	shopTypeKey      = ":shopType"
+	HotBlog          = ":hotBlog"
 	shopTypeCacheTTL = 60 * 60
 )
 
@@ -63,4 +64,22 @@ func QueryShopTypeList(context *gin.Context) {
 	//4.将数据写入缓存（可异步）并返回结果
 	setShopTypeListToCache(shopTypeList)
 	response.Success(context, shopTypeList)
+}
+
+func GetHotBlog(c *gin.Context) {
+	//1.从上下文中拿到页码（路径参数用Query方法获取）
+	pageNum := c.Query("current")
+	//2.带着页码去缓存查询
+	cacheRes, err := getBlogByPageNumFromCache(pageNum)
+	if cacheRes != nil && err == nil {
+		response.Success(c, cacheRes)
+		return
+	}
+	//3.否则走数据库
+	dbRes, err := getBlogByPageNumFromDB(pageNum)
+	if err != nil {
+		response.Error(c, response.ErrDatabase, "查询db失败")
+		return
+	}
+	response.Success(c, dbRes)
 }

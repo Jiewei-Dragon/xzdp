@@ -52,6 +52,7 @@ func NewRouter() *gin.Engine {
 		public.GET("/shop-type/list", ShopService.QueryShopTypeList)
 		public.POST("/user/code", UserService.SendVerifyCode)
 		public.POST("/user/login", UserService.Login)
+		public.GET("/blog/hot", ShopService.GetHotBlog)
 	}
 	auth := r.Group("/api")
 	auth.Use(middleware.OptionalJWT(), middleware.RequireAuth())
