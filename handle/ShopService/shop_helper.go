@@ -42,44 +42,91 @@ func setShopTypeListToCache(shopTypeList []*model.TbShopType) error {
 	if b == nil || err != nil {
 		return err
 	}
-	//调用 Err() 用于获取命令执行过程中可能出现的错误
-	return db.RedisDb.LPush(context.Background(), shopKeyPrefix+shopTypeKey+":list", string(b)).Err()
+	// 使用 Set 命令存储为 String 类型，并设置过期时间
+	return db.RedisDb.Set(context.Background(), shopKeyPrefix+shopTypeKey+":list", b, shopTypeCacheTTL).Err()
 }
 
-func setHotBlogToCache(TbBlogList []*model.TbBlog) error {
-	// TODO: 实现缓存写入逻辑
-	return nil
-}
-
-func getShopTypeListFromCache() (*model.TbShopType, error) {
-	res, err := db.RedisDb.LRange(context.Background(), shopKeyPrefix+shopTypeKey+":list", 0, -1).Result()
-	if res == nil || err != nil {
+// sonic.Marshal：参数是任何数据类型，返回json字节类型的数据，Go 对象 → JSON 字节。
+// sonic.Unmarshal：第一个参数是json字节，第二个参数是目标Go对象的指针，JSON 字节 → Go 对象。
+func getShopTypeListFromCache() (*[]model.TbShopType, error) {
+	// 使用 Get 命令读取 String 类型的数据，key 与写入时保持一致
+	res, err := db.RedisDb.Get(context.Background(), shopKeyPrefix+shopTypeKey+":list").Result()
+	if res == "" || err != nil {
 		return nil, err
 	}
-	var types model.TbShopType
-	//将Redis返回的 JSON 字符串（res[0]）解析为 Go 中的结构体对象（types）。
-	err = sonic.Unmarshal([]byte(res[0]), &types)
+
+	var types []model.TbShopType
+	// 直接将 JSON 字符串反序列化为 []model.TbShopType
+	err = sonic.Unmarshal([]byte(res), &types)
 	if err != nil {
 		return nil, err
 	}
 	return &types, nil
 }
 
-func getBlogByPageNumFromCache(pageNum string) (*model.TbBlog, error) {
-	Num, err := strconv.Atoi(pageNum)
-	startNum, endNum := (Num-1)*10, Num*10-1
-	//LRange返回的是[]string
-	res, err := db.RedisDb.LRange(context.Background(), shopKeyPrefix+HotBlog, int64(startNum), int64(endNum)).Result()
-	if len(res) < 1 || err != nil {
-		return nil, err
+func setHotBlogToCache(TbBlogList []*model.TbBlog) error {
+	if len(TbBlogList) == 0 {
+		return nil // 空数组不需要缓存
 	}
-	var blogs model.TbBlog
-	//把cache结果反序列化为指定结构体
-	err = sonic.Unmarshal([]byte(res[0]), &blogs)
+
+	ctx := context.Background()
+	key := shopKeyPrefix + HotBlogKey
+
+	// 使用管道批量写入，提高性能
+	pipe := db.RedisDb.Pipeline()
+
+	// 先删除旧数据
+	pipe.Del(ctx, key)
+
+	// 将每个博客序列化后添加到 List 中
+	for _, blog := range TbBlogList {
+		b, err := sonic.Marshal(blog)
+		if err != nil {
+			return err
+		}
+		pipe.RPush(ctx, key, string(b))
+	}
+
+	// 设置过期时间
+	pipe.Expire(ctx, key, HotBlogTTL)
+
+	// 执行管道命令
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+func getBlogByPageNumFromCache(pageNum string) ([]*model.TbBlog, error) {
+	Num, err := strconv.Atoi(pageNum)
 	if err != nil {
 		return nil, err
 	}
-	return &blogs, nil
+
+	pageSize := 10
+	startNum := (Num - 1) * pageSize
+	endNum := startNum + pageSize - 1
+
+	// 使用 LRange 读取指定范围的博客
+	res, err := db.RedisDb.LRange(context.Background(), shopKeyPrefix+HotBlogKey, int64(startNum), int64(endNum)).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(res) == 0 {
+		return nil, nil // 缓存未命中或该页无数据
+	}
+
+	// 反序列化每个博客
+	blogs := make([]*model.TbBlog, 0, len(res))
+	for _, item := range res {
+		var blog model.TbBlog
+		err = sonic.Unmarshal([]byte(item), &blog)
+		if err != nil {
+			return nil, err
+		}
+		blogs = append(blogs, &blog)
+	}
+
+	return blogs, nil
 }
 
 func getBlogByPageNumFromDB(pageNum string) ([]*model.TbBlog, error) {

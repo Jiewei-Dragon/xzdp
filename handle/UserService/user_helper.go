@@ -2,6 +2,7 @@ package UserService
 
 import (
 	"context"
+	"strconv"
 	"time"
 	"xzdp/dal/model"
 	"xzdp/dal/query"
@@ -40,7 +41,7 @@ func setUserToCache(user *model.TbUser) error {
 		return err
 	}
 	return db.RedisDb.Set(context.Background(),
-		userPrefix+inforKeyPrefix+":"+string(user.ID),
+		userPrefix+inforKeyPrefix+":"+strconv.FormatUint(user.ID, 10),
 		string(b), time.Duration(userInfoCacheTTL)).Err()
 }
 

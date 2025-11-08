@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log/slog"
 	"strconv"
+	"time"
 	"xzdp/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -12,10 +13,11 @@ import (
 
 const (
 	shopKeyPrefix    = "cache:shop"
-	shopCacheTTL     = 30 * 60
 	shopTypeKey      = ":shopType"
-	HotBlog          = ":hotBlog"
-	shopTypeCacheTTL = 60 * 60
+	HotBlogKey       = ":hotBlog"
+	shopCacheTTL     = 3 * time.Minute
+	shopTypeCacheTTL = 6 * time.Minute
+	HotBlogTTL       = 5 * time.Minute
 )
 
 func QueryShopById(c *gin.Context) {
@@ -75,11 +77,13 @@ func GetHotBlog(c *gin.Context) {
 		response.Success(c, cacheRes)
 		return
 	}
-	//3.否则走数据库
+	//3.缓存未命中，从数据库查询
 	dbRes, err := getBlogByPageNumFromDB(pageNum)
 	if err != nil {
 		response.Error(c, response.ErrDatabase, "查询db失败")
 		return
 	}
+	err = setHotBlogToCache(dbRes)
+	//5.返回结果
 	response.Success(c, dbRes)
 }
