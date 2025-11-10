@@ -89,10 +89,12 @@ func GetHotBlog(c *gin.Context) {
 	}
 	err = setHotBlogToCache(dbRes)
 	if err != nil {
-		response.ErrorWithData(c, response.ErrDatabase, err)
+		//5.返回结果
+		response.Success(c, dbRes)
+	} else {
+		response.Error(c, response.ErrDatabaseNotFind, "已经没有更多了")
 	}
-	//5.返回结果
-	response.Success(c, dbRes)
+
 }
 
 func GetShopByTypeId(c *gin.Context) {
