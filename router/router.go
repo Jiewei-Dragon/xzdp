@@ -50,6 +50,7 @@ func NewRouter() *gin.Engine {
 	{
 		public.GET("/shop/:id", ShopService.QueryShopById)
 		public.GET("/shop-type/list", ShopService.QueryShopTypeList)
+		public.GET("/shop/of/type", ShopService.GetShopByTypeId)
 		public.POST("/user/code", UserService.SendVerifyCode)
 		public.POST("/user/login", UserService.Login)
 		public.GET("/blog/hot", ShopService.GetHotBlog)

@@ -10,15 +10,52 @@ import (
 	"github.com/bytedance/sonic"
 )
 
-func getShopByIDFromDB(idInt int) (*model.TbShop, error) {
+func getShopByIdFromDB(idInt int) (*model.TbShop, error) {
 	shopQuery := query.TbShop
 	return shopQuery.Where(shopQuery.ID.Eq(uint64(idInt))).First()
 }
 
+func getShopsByTypeIdFromDB(idInt int, sortBy string, current int) ([]*model.TbShop, error) {
+	shopsQuery := query.TbShop
+	offset := (current - 1) * ShopPageSize // 跳过的记录数
+	limit := ShopPageSize                  // 每页返回的记录数
+	if sortBy == "comments" {
+		return shopsQuery.Where(shopsQuery.TypeID.Eq(uint64(idInt))).Order(shopsQuery.Comments.Desc()).Offset(offset).Limit(limit).Find()
+	}
+	if sortBy == "score" {
+		return shopsQuery.Where(shopsQuery.TypeID.Eq(uint64(idInt))).Order(shopsQuery.Score.Desc()).Offset(offset).Limit(limit).Find()
+	}
+	return shopsQuery.Where(shopsQuery.TypeID.Eq(uint64(idInt))).Offset(offset).Limit(limit).Find()
+}
+
+func setShopsByTypeIdToCache(CacheKey string, Shops []*model.TbShop) error {
+	//	因为数据量较小，并且访问比较集中，所以采用缓存分页数据方案
+	//	cache:shop:typeId:{typeId}:sort:{sortBy}:page:{current}，即把每种排序的每一页的都缓存
+	//  1.先将数据序列化为 JSON
+	jsonData, err := sonic.Marshal(Shops)
+	if err != nil {
+		return err
+	}
+	return db.RedisDb.Set(context.Background(), CacheKey, jsonData, shopCacheTTL).Err()
+}
+
+func getShopsByTypeIdFromCache(CacheKey string) ([]*model.TbShop, error) {
+	res, err := db.RedisDb.Get(context.Background(), CacheKey).Result()
+	if err != nil {
+		return nil, err
+	}
+	var shopRes []*model.TbShop
+	er := sonic.Unmarshal([]byte(res), &shopRes)
+	if er != nil {
+		return nil, er
+	}
+	return shopRes, nil
+}
+
 // 函数成功执行时，返回一个指向 model.TbShop 结构体的指针
 // 表示函数执行过程中可能出现的错误。如果执行成功，error 为 nil
-func getShopFromCache(idStr string) (*model.TbShop, error) {
-	res, err := db.RedisDb.Get(context.Background(), idStr).Result()
+func getShopByIdFromCache(CacheKey string) (*model.TbShop, error) {
+	res, err := db.RedisDb.Get(context.Background(), CacheKey).Result()
 	if res == "" || err != nil {
 		return nil, err
 	} else {
@@ -30,6 +67,14 @@ func getShopFromCache(idStr string) (*model.TbShop, error) {
 		}
 		return &shop, nil
 	}
+}
+
+func setShopByIdtoCache(CacheKey string, shop model.TbShop) error {
+	shopJson, err := sonic.Marshal(shop)
+	if shopJson == nil || err != nil {
+		return err
+	}
+	return db.RedisDb.Set(context.Background(), CacheKey, shopJson, shopCacheTTL).Err()
 }
 
 func getShopTypeListFromDB() ([]*model.TbShopType, error) {
@@ -65,34 +110,16 @@ func getShopTypeListFromCache() (*[]model.TbShopType, error) {
 }
 
 func setHotBlogToCache(TbBlogList []*model.TbBlog) error {
-	if len(TbBlogList) == 0 {
-		return nil // 空数组不需要缓存
-	}
-
-	ctx := context.Background()
-	key := shopKeyPrefix + HotBlogKey
-
-	// 使用管道批量写入，提高性能
-	pipe := db.RedisDb.Pipeline()
-
-	// 先删除旧数据
-	pipe.Del(ctx, key)
-
-	// 将每个博客序列化后添加到 List 中
+	var TbBlogListJson []interface{}
 	for _, blog := range TbBlogList {
-		b, err := sonic.Marshal(blog)
-		if err != nil {
-			return err
-		}
-		pipe.RPush(ctx, key, string(b))
+		b, _ := sonic.Marshal(blog)
+		TbBlogListJson = append(TbBlogListJson, string(b))
 	}
-
-	// 设置过期时间
-	pipe.Expire(ctx, key, HotBlogTTL)
-
-	// 执行管道命令
-	_, err := pipe.Exec(ctx)
-	return err
+	err := db.RedisDb.LPush(context.Background(), shopKeyPrefix+HotBlogKey, TbBlogListJson).Err()
+	if err != nil {
+		return err
+	}
+	return db.RedisDb.Expire(context.Background(), shopKeyPrefix+HotBlogKey, HotBlogTTL).Err()
 }
 
 func getBlogByPageNumFromCache(pageNum string) ([]*model.TbBlog, error) {
@@ -137,5 +164,5 @@ func getBlogByPageNumFromDB(pageNum string) ([]*model.TbBlog, error) {
 	pageSize := 10 // 每页10条
 	offset := (Num - 1) * pageSize
 	TbBlogQuery := query.TbBlog
-	return TbBlogQuery.Order(TbBlogQuery.Liked).Offset(offset).Limit(pageSize).Find()
+	return TbBlogQuery.Order(TbBlogQuery.Liked.Desc()).Offset(offset).Limit(pageSize).Find()
 }
