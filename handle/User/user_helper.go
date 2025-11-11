@@ -1,4 +1,4 @@
-package UserService
+package User
 
 import (
 	"context"

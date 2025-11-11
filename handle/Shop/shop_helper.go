@@ -1,4 +1,4 @@
-package ShopService
+package Shop
 
 import (
 	"context"
@@ -9,11 +9,6 @@ import (
 
 	"github.com/bytedance/sonic"
 )
-
-func getShopByIdFromDB(idInt int) (*model.TbShop, error) {
-	shopQuery := query.TbShop
-	return shopQuery.Where(shopQuery.ID.Eq(uint64(idInt))).First()
-}
 
 func getShopsByTypeIdFromDB(idInt int, sortBy string, current int) ([]*model.TbShop, error) {
 	shopsQuery := query.TbShop
@@ -54,18 +49,22 @@ func getShopsByTypeIdFromCache(CacheKey string) ([]*model.TbShop, error) {
 
 // 函数成功执行时，返回一个指向 model.TbShop 结构体的指针
 // 表示函数执行过程中可能出现的错误。如果执行成功，error 为 nil
+func getShopByIdFromDB(idInt int) (*model.TbShop, error) {
+	shopQuery := query.TbShop
+	return shopQuery.Where(shopQuery.ID.Eq(uint64(idInt))).First()
+}
+
 func getShopByIdFromCache(CacheKey string) (*model.TbShop, error) {
 	res, err := db.RedisDb.Get(context.Background(), CacheKey).Result()
 	if res == "" || err != nil {
 		return nil, err
 	} else {
-		var shop model.TbShop
-		//将JSON格式的字节流转换为 Go 中的结构体，返回值是一个error，解析成功时为nil，失败返回具体结果
+		var shop *model.TbShop
 		err = sonic.Unmarshal([]byte(res), &shop)
 		if err != nil {
 			return nil, err
 		}
-		return &shop, nil
+		return shop, nil
 	}
 }
 
@@ -115,11 +114,11 @@ func setHotBlogToCache(TbBlogList []*model.TbBlog) error {
 		b, _ := sonic.Marshal(blog)
 		TbBlogListJson = append(TbBlogListJson, string(b))
 	}
-	err := db.RedisDb.LPush(context.Background(), shopKeyPrefix+HotBlogKey, TbBlogListJson).Err()
+	err := db.RedisDb.LPush(context.Background(), BlogPrefix+HotBlogKey, TbBlogListJson).Err()
 	if err != nil {
 		return err
 	}
-	return db.RedisDb.Expire(context.Background(), shopKeyPrefix+HotBlogKey, HotBlogTTL).Err()
+	return db.RedisDb.Expire(context.Background(), BlogPrefix+HotBlogKey, HotBlogTTL).Err()
 }
 
 func getBlogByPageNumFromCache(pageNum string) ([]*model.TbBlog, error) {
@@ -133,7 +132,7 @@ func getBlogByPageNumFromCache(pageNum string) ([]*model.TbBlog, error) {
 	endNum := startNum + pageSize - 1
 
 	// 使用 LRange 读取指定范围的博客
-	res, err := db.RedisDb.LRange(context.Background(), shopKeyPrefix+HotBlogKey, int64(startNum), int64(endNum)).Result()
+	res, err := db.RedisDb.LRange(context.Background(), BlogPrefix+HotBlogKey, int64(startNum), int64(endNum)).Result()
 	if err != nil {
 		return nil, err
 	}

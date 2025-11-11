@@ -3,18 +3,14 @@ package router
 import (
 	"net/http"
 	"path/filepath"
-	"xzdp/handle/ShopService"
-	"xzdp/handle/UserService"
+	"xzdp/handle/Shop"
+	"xzdp/handle/User"
+	"xzdp/handle/Voucher"
 	"xzdp/middleware"
 	"xzdp/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )
-
-type User struct {
-	Name string `json:"name" binding:"required"`
-	Age  int    `json:"age" `
-}
 
 func HandleNotFound(c *gin.Context) {
 	response.Error(c, response.ErrNotFound, "route not found")
@@ -48,22 +44,32 @@ func NewRouter() *gin.Engine {
 	public := r.Group("/api")
 	public.Use(middleware.OptionalJWT())
 	{
-		public.GET("/shop/:id", ShopService.QueryShopById)
-		public.GET("/shop-type/list", ShopService.QueryShopTypeList)
-		public.GET("/shop/of/type", ShopService.GetShopByTypeId)
-		public.POST("/user/code", UserService.SendVerifyCode)
-		public.POST("/user/login", UserService.Login)
-		public.GET("/blog/hot", ShopService.GetHotBlog)
+		//商铺相关
+		public.GET("/shop/:id", Shop.QueryShopById)
+		public.GET("/shop-type/list", Shop.QueryShopTypeList)
+		public.GET("/shop/of/type", Shop.GetShopByTypeId)
+		public.POST("/shop/add", Shop.AddShop)
+		public.DELETE("/shop/delete/:shopId", Shop.DelShop)
+		public.PUT("/shop/update", Shop.UpdateShop)
+		//用户相关
+		public.POST("/user/code", User.SendVerifyCode)
+		public.POST("/user/login", User.Login)
+		//博客相关
+		public.GET("/blog/hot", Shop.GetHotBlog)
+		//优惠券相关
+		public.POST("voucher/add/", Voucher.AddVoucher)
 	}
 	auth := r.Group("/api")
 	auth.Use(middleware.OptionalJWT(), middleware.RequireAuth())
 	{
 		//登录时第一次获取用户信息
-		auth.GET("/user/me", UserService.GetUserInfo)
+		auth.GET("/user/me", User.GetUserInfo)
 		////每次点击个人信息页时获取用户信息
-		auth.GET("/user/info/:userId", UserService.GetUserInfoById)
-		auth.POST("/user/logout", UserService.Logout)
-		auth.PUT("user/nickname", UserService.EditNickname)
+		auth.GET("/user/info/:userId", User.GetUserInfoById)
+		auth.POST("/user/logout", User.Logout)
+		auth.PUT("user/nickname", User.EditNickname)
+		//优惠券相关
+		auth.GET("/voucher/list/:shopId", Voucher.GetVouchersByShopId)
 	}
 	r.StaticFile("/index.html", filepath.Join(staticDir, "index.html"))
 	r.StaticFile("/login.html", filepath.Join(staticDir, "login.html"))

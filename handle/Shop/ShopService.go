@@ -1,10 +1,13 @@
-package ShopService
+package Shop
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"strconv"
 	"time"
+	"xzdp/dal/query"
+	"xzdp/db"
 	"xzdp/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -14,11 +17,12 @@ import (
 const (
 	shopKeyPrefix    = "cache:shop"
 	shopTypeKey      = ":shopType"
+	BlogPrefix       = "blog"
 	HotBlogKey       = ":hotBlog"
 	shopCacheTTL     = 3 * time.Minute
 	shopTypeCacheTTL = 0 * time.Minute
 	HotBlogTTL       = 5 * time.Minute
-	ShopPageSize     = 5
+	ShopPageSize     = 10
 )
 
 func QueryShopById(c *gin.Context) {
@@ -63,7 +67,7 @@ func QueryShopTypeList(context *gin.Context) {
 	//3.缓存未命中或者出错，从数据库中查找
 	shopTypeList, err := getShopTypeListFromDB()
 	if shopTypeList == nil || err != nil {
-		response.Error(context, response.ErrDatabase, "查询商户类型失败")
+		response.Error(context, response.ErrDatabaseNotFind, "查询商户类型失败")
 		return
 	}
 
@@ -89,11 +93,9 @@ func GetHotBlog(c *gin.Context) {
 	}
 	err = setHotBlogToCache(dbRes)
 	if err != nil {
-		//5.返回结果
-		response.Success(c, dbRes)
-	} else {
-		response.Error(c, response.ErrDatabaseNotFind, "已经没有更多了")
+		slog.Log(c, 1, "博客缓存失败")
 	}
+	response.Success(c, dbRes)
 
 }
 
@@ -144,4 +146,100 @@ func GetShopByTypeId(c *gin.Context) {
 	} else {
 		response.Error(c, response.ErrDatabaseNotFind, "已经没有更多了")
 	}
+}
+
+// PUT /api/v1/shop
+func UpdateShop(c *gin.Context) {
+	var shop ShopRequest
+	err := c.ShouldBindJSON(&shop)
+	if err != nil {
+		slog.Error("bindjson bad", "err", err)
+		response.Error(c, response.ErrBind)
+		return
+	}
+
+	// 更新时必须提供有效的ID
+	if shop.ID == 0 {
+		response.Error(c, response.ErrValidation, "shop id is required for update")
+		return
+	}
+	update(c, &shop)
+}
+
+func update(c *gin.Context, shop *ShopRequest) {
+	//1.更新数据库
+	//当通过 struct 更新时，GORM 只会更新非零字段。
+	//若想确保指定字段被更新,应使用Select更新选定字段，或使用map来完成更新
+	data := shop.ToModel()
+	tbshop := query.TbShop
+	_, err := tbshop.Where(tbshop.ID.Eq(shop.ID)).Updates(data)
+	if err != nil {
+		slog.Error("update mysql bad", "err", err)
+		response.Error(c, response.ErrDatabase)
+		return
+	}
+
+	//2.删除缓存
+	key := shopKeyPrefix + strconv.Itoa(int(shop.ID))
+	db.RedisDb.Del(context.Background(), key)
+
+	response.Success(c, nil)
+}
+
+// 添加商铺
+// post /api/v1/shop
+func AddShop(c *gin.Context) {
+	var shop ShopRequest
+	err := c.ShouldBindJSON(&shop)
+	if err != nil {
+		slog.Error("bindjson bad", "err", err)
+		response.Error(c, response.ErrBind)
+		return
+	}
+
+	// 添加时忽略ID字段
+	shop.ID = 0
+
+	data := shop.ToModel()
+	err = query.TbShop.Create(data)
+	if err != nil {
+		slog.Error("mysql create shop err", "err", err)
+		response.Error(c, response.ErrDatabase)
+		return
+	}
+
+	response.Success(c, gin.H{"id": data.ID})
+}
+
+// 删除商铺
+// delete /api/v1/shop/:shopId
+func DelShop(c *gin.Context) {
+	id := c.Param("shopId")
+	if id == "" {
+		response.Error(c, response.ErrValidation, "id is null")
+		return
+	}
+
+	val, err := strconv.ParseInt(id, 10, 64)
+	if err != nil || val <= 0 {
+		response.Error(c, response.ErrValidation, "invalid shop id")
+		return
+	}
+	shop := query.TbShop
+	result, err := shop.Where(shop.ID.Eq(uint64(val))).Delete()
+	if err != nil {
+		response.Error(c, response.ErrDatabase)
+	}
+	if result.RowsAffected == 0 {
+		response.Error(c, response.ErrNotFound, "shop not found")
+		return
+	}
+	//删除缓存
+	key := "cache:shop:type:sortBy:empty:current:1"
+	_, err = db.RedisDb.Del(context.Background(), key).Result()
+	if err != nil {
+		slog.Error("redis delete shop error", "error", err)
+	}
+
+	response.Success(c, nil)
 }
