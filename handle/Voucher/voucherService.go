@@ -4,27 +4,28 @@ import (
 	"log/slog"
 	"strconv"
 	"time"
-	"xzdp/dal/model"
 	"xzdp/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )
 
 const (
+	timeLayout       = "2006-01-02 15:04:05"
+	timeFormatError  = "time format error, must be like 2006-01-02 15:04:05"
 	voucherKeyPrefix = "voucher:shop:"
 	voucherTTL       = 30 * time.Second
 )
 
 func AddVoucher(c *gin.Context) {
-	var voucherReq model.TbVoucher
-	err := c.ShouldBind(voucherReq)
+	var voucherReq VoucherDTO
+	err := c.BindJSON(&voucherReq)
 	VoucherType := voucherReq.Type
 	var id uint64
 	if VoucherType == 0 {
-		id, err = AddDinaryVoucherToDB(voucherReq)
-	} // } else if VoucherType == 1 {
-
-	// }
+		id, err = AddDinaryVoucherToDB(DTOToVoucherModel(voucherReq))
+	} else if VoucherType == 1 {
+		id, err = AddSeckillVoucherToDB(voucherReq)
+	}
 	response.HandleBusinessResult(c, err, gin.H{"voucherId": id})
 }
 
@@ -47,11 +48,7 @@ func GetVouchersByShopId(c *gin.Context) {
 	if err != nil {
 		response.Error(c, response.ErrDatabaseNotFind)
 	}
-	var res []VoucherDTO
-	for _, v := range resDb {
-		res = append(res, VouchermodelToDTO(v))
-	}
-	response.Success(c, res)
+	response.Success(c, resDb)
 	err = setVouchersToCache(CacheKey, resDb)
 	if err != nil {
 		slog.Log(c, 1, "博客缓存失败")
