@@ -62,6 +62,7 @@ func AddSeckillVoucherToDB(v VoucherDTO) (uint64, error) {
 	return voucherDbModel.ID, nil
 }
 
+// 获取某个商家的全部优惠券
 func getVouchersFromDB(shopId int64) ([]*VoucherDTO, error) {
 	v := query.TbVoucher
 	sv := query.TbSeckillVoucher

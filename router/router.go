@@ -3,6 +3,7 @@ package router
 import (
 	"net/http"
 	"path/filepath"
+	"xzdp/handle/Order"
 	"xzdp/handle/Shop"
 	"xzdp/handle/User"
 	"xzdp/handle/Voucher"
@@ -58,6 +59,7 @@ func NewRouter() *gin.Engine {
 		public.GET("/blog/hot", Shop.GetHotBlog)
 		//优惠券相关
 		public.POST("voucher/add/", Voucher.AddVoucher)
+		public.POST("voucher-order/seckill/:id", Order.SeckillVouchers)
 	}
 	auth := r.Group("/api")
 	auth.Use(middleware.OptionalJWT(), middleware.RequireAuth())
@@ -70,6 +72,7 @@ func NewRouter() *gin.Engine {
 		auth.PUT("user/nickname", User.EditNickname)
 		//优惠券相关
 		auth.GET("/voucher/list/:shopId", Voucher.GetVouchersByShopId)
+		// auth.POST("voucher-order/seckill/:id", Order.SeckillVouchers)
 	}
 	r.StaticFile("/index.html", filepath.Join(staticDir, "index.html"))
 	r.StaticFile("/login.html", filepath.Join(staticDir, "login.html"))

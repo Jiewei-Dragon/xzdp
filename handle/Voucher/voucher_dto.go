@@ -19,6 +19,7 @@ import (
 // }
 
 type VoucherDTO struct {
+	ID          int    `json:"id"`     //优惠券ID
 	ShopId      int    `json:"shopId"` //关联的商店id
 	Title       string `json:"title"`
 	SubTitle    string `json:"subTitle"`
