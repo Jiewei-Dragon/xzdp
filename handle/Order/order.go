@@ -2,7 +2,6 @@ package Order
 
 import (
 	"context"
-	"errors"
 	"strconv"
 	"time"
 	"xzdp/dal/model"
@@ -51,7 +50,9 @@ func SeckillVouchers(c *gin.Context) {
 	userId := c.GetInt64(middleware.CtxKeyUserId)
 	// 1.先判断是否已经过期
 	reqTime := time.Now()
-	voucherOld, err := getSeckillVoucherById(int64(voucherIdInt))
+	//这里就不能用helper里面的方法了，因为里面的方法需要在事务下进行
+	seckill := query.TbSeckillVoucher
+	voucherOld, err := seckill.Where(seckill.VoucherID.Eq(uint64(voucherIdInt))).First()
 	if reqTime.After(voucherOld.EndTime) || reqTime.Before(voucherOld.BeginTime) {
 		response.Error(c, response.ErrValidation, "不再秒杀优惠券时间范围内")
 		return
@@ -66,13 +67,15 @@ func SeckillVouchers(c *gin.Context) {
 	globalId := generateOrderId("order")
 	err = q.Transaction(func(tx *query.Query) error {
 		// 3.0通过CAS乐观锁修改库存
-		voucherNew, err := getSeckillVoucherById(int64(voucherIdInt))
+		voucherNew, err := getSeckillVoucherById(tx, int64(voucherIdInt))
 		if voucherOld.Stock != voucherNew.Stock {
-			return errors.New("网络开小差啦，请重试")
+			response.Error(c, response.ErrValidation, "网络开小差啦，请重试")
+			return err
 		}
 		// 3.1 先减少库存
-		err = UpdateSeckillVoucher(voucherIdStr)
-		if err != nil {
+		RowsAffected, err := UpdateSeckillVoucher(tx, voucherIdStr)
+		if RowsAffected < 0 || err != nil {
+			response.Error(c, response.ErrValidation, "你来晚了，优惠券已经没了！")
 			return err
 		}
 		// 3.2 新增秒杀记录
@@ -88,11 +91,11 @@ func SeckillVouchers(c *gin.Context) {
 			RefundTime: reqTime,
 			UpdateTime: reqTime,
 		}
-		err = SeckillVoucherAdd(sv)
+		SeckillVoucherAdd(tx, sv)
 		return err
 	})
 	if err != nil {
-		response.Error(c, response.ErrDatabase, err.Error())
+		response.Error(c, response.ErrDatabase, "秒杀事务异常")
 		return
 	}
 	response.Success(c, gin.H{"orderId": strconv.FormatInt(globalId, 10)})
