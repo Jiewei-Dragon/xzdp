@@ -7,7 +7,6 @@ import (
 	"xzdp/dal/model"
 	"xzdp/dal/query"
 	"xzdp/db"
-	"xzdp/middleware"
 	"xzdp/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -24,6 +23,10 @@ const (
 type seckillRequest struct {
 	UserId    int `json:"userId"`
 	VoucherId int `json:"voucherId"`
+}
+
+type reqBody struct {
+	UserId int64 `json:"userId" binding:"omitempty"`
 }
 
 // 生成分布式订单ID
@@ -47,14 +50,31 @@ func SeckillVouchers(c *gin.Context) {
 	if err != nil {
 		response.HandleBusinessError(c, err)
 	}
-	userId := c.GetInt64(middleware.CtxKeyUserId)
-	// 1.先判断是否已经过期
+	// userId := c.GetInt64(middleware.CtxKeyUserId)
+
+	//-----------------------------------------------
+	var reqbody reqBody
+	err = c.BindJSON(&reqbody)
+	if err != nil {
+		response.HandleBusinessError(c, err)
+	}
+	userId := reqbody.UserId
+	//-----------------------------------------------
+
+	// 0.先判断是否已经拥有了优惠券
+	order := query.TbVoucherOrder
+	res, err := order.Where(order.UserID.Eq(uint64(userId))).Find()
+	if len(res) > 0 {
+		response.Error(c, response.ErrValidation, "每个用户限购一张该优惠券")
+		return
+	}
+	// 1.判断是否已经过期
 	reqTime := time.Now()
 	//这里就不能用helper里面的方法了，因为里面的方法需要在事务下进行
 	seckill := query.TbSeckillVoucher
 	voucherOld, err := seckill.Where(seckill.VoucherID.Eq(uint64(voucherIdInt))).First()
 	if reqTime.After(voucherOld.EndTime) || reqTime.Before(voucherOld.BeginTime) {
-		response.Error(c, response.ErrValidation, "不再秒杀优惠券时间范围内")
+		response.Error(c, response.ErrValidation, "不在秒杀优惠券时间范围内")
 		return
 	}
 	// 2.再判断库存
