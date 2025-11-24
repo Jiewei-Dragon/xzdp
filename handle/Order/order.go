@@ -25,9 +25,15 @@ type seckillRequest struct {
 	VoucherId int `json:"voucherId"`
 }
 
+// 压测时候用
 type reqBody struct {
 	UserId int64 `json:"userId" binding:"omitempty"`
 }
+
+const (
+	SeckillVoucherKeyPrefix = "SeckillVoucher:"
+	SeckillVoucherTTL       = 30 * time.Minute
+)
 
 // 生成分布式订单ID
 func generateOrderId(KeyPrefix string) int64 {
@@ -54,14 +60,15 @@ func SeckillVouchers(c *gin.Context) {
 
 	//-----------------------------------------------
 	var reqbody reqBody
+	seckill := query.TbSeckillVoucher
+	CacheKey := SeckillVoucherKeyPrefix + voucherIdStr
 	err = c.BindJSON(&reqbody)
 	if err != nil {
 		response.HandleBusinessError(c, err)
 	}
 	userId := reqbody.UserId
-	//-----------------------------------------------
-
-	// 0.先判断是否已经拥有了优惠券
+	//------------------------------------------------
+	// 先判断是否已经拥有了优惠券
 	order := query.TbVoucherOrder
 	res, err := order.Where(order.UserID.Eq(uint64(userId))).Find()
 	if len(res) > 0 {
@@ -71,31 +78,48 @@ func SeckillVouchers(c *gin.Context) {
 	// 1.判断是否已经过期
 	reqTime := time.Now()
 	//这里就不能用helper里面的方法了，因为里面的方法需要在事务下进行
-	seckill := query.TbSeckillVoucher
-	voucherOld, err := seckill.Where(seckill.VoucherID.Eq(uint64(voucherIdInt))).First()
-	if reqTime.After(voucherOld.EndTime) || reqTime.Before(voucherOld.BeginTime) {
-		response.Error(c, response.ErrValidation, "不在秒杀优惠券时间范围内")
+	CacheStock := GetStockfromCache(CacheKey)
+	if CacheStock < 0 {
+		seckill, err := seckill.Where(seckill.VoucherID.Eq(uint64(voucherIdInt))).First()
+		if seckill == nil || err != nil {
+			return
+		}
+		SetSeckillStockToCache(CacheKey, int(seckill.Stock))
+		// 1.再判断库存
+		if reqTime.After(seckill.EndTime) || reqTime.Before(seckill.BeginTime) {
+			response.Error(c, response.ErrValidation, "不在秒杀优惠券时间范围内")
+			return
+		}
+		// 2.再判断库存
+		if seckill.Stock <= 0 {
+			response.Error(c, response.ErrValidation, "优惠券已经没啦，下次再快一点")
+			return
+		}
+	}
+	// DECR原子减1，返回减后的值（避免并发问题）
+	remainStock, err := db.RedisDb.Decr(context.Background(), SeckillVoucherKeyPrefix+voucherIdStr).Result()
+	if err != nil {
+		response.Error(c, response.ErrValidation, "网络繁忙，请重试")
 		return
 	}
-	// 2.再判断库存
-	if voucherOld.Stock <= 0 {
+	if remainStock < 0 {
 		response.Error(c, response.ErrValidation, "优惠券已经没啦，下次再快一点")
 		return
 	}
-	// 3.秒杀优惠券涉及到两张表，用事务确保原子性
+	// 3. 预扣减成功后，再执行数据库事务（这一步才走到数据库）
 	q := query.Use(db.DBEngine)
 	globalId := generateOrderId("order")
+	UserLockMap.Lock(int(userId))
 	err = q.Transaction(func(tx *query.Query) error {
-		// 3.0通过CAS乐观锁修改库存
-		voucherNew, err := getSeckillVoucherById(tx, int64(voucherIdInt))
-		if voucherOld.Stock != voucherNew.Stock {
-			response.Error(c, response.ErrValidation, "网络开小差啦，请重试")
-			return err
-		}
-		// 3.1 先减少库存
-		RowsAffected, err := UpdateSeckillVoucher(tx, voucherIdStr)
-		if RowsAffected < 0 || err != nil {
-			response.Error(c, response.ErrValidation, "你来晚了，优惠券已经没了！")
+		voucher, err := getSeckillVoucherById(tx, int64(voucherIdInt))
+		// 3.1 通过CAS乐观锁修改库存
+		RowsAffected, err := UpdateSeckillVoucher(tx, voucher)
+		// SQL 更新返回的 RowsAffected = 0说明 库存数没同步或者库存数被其他线程扣到0了
+		if RowsAffected == 0 || err != nil {
+			response.Error(c, response.ErrValidation, "你的优惠券被其他人抢走啦，请重试！")
+			// 回滚
+			db.RedisDb.Incr(context.Background(), CacheKey)
+			c.Abort() // 终止请求，不再执行后续代码
 			return err
 		}
 		// 3.2 新增秒杀记录
@@ -114,9 +138,16 @@ func SeckillVouchers(c *gin.Context) {
 		SeckillVoucherAdd(tx, sv)
 		return err
 	})
+	UserLockMap.Unlock(int(userId))
 	if err != nil {
-		response.Error(c, response.ErrDatabase, "秒杀事务异常")
-		return
+		if !c.IsAborted() {
+			//回滚Redis里的库存
+			db.RedisDb.Incr(context.Background(), CacheKey)
+			response.Error(c, response.ErrDatabase, "秒杀事务异常")
+			c.Abort()
+		}
 	}
-	response.Success(c, gin.H{"orderId": strconv.FormatInt(globalId, 10)})
+	if !c.IsAborted() {
+		response.Success(c, gin.H{"orderId": strconv.FormatInt(globalId, 10)})
+	}
 }

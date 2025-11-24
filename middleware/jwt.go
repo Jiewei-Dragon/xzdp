@@ -22,19 +22,20 @@ type userClaims struct {
 
 // 生成Token
 func GenerateToken(phone string, userId int64) (string, error) {
+	// 1. 接收手机号和userId
+	// 2. 创建userClaims对象
 	claims := userClaims{
-		Phone:  phone,
-		UserId: userId,
+		Phone:  phone,  //手机号
+		UserId: userId, //用户ID
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(config.JwtOption.Expire)),
-			Issuer:    config.JwtOption.Issuer,
-			NotBefore: jwt.NewNumericDate(time.Now()), //生效时间
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(config.JwtOption.Expire)), //过期时间
+			Issuer:    config.JwtOption.Issuer,                                     //签发者
+			NotBefore: jwt.NewNumericDate(time.Now()),                              //生效时间
 		},
 	}
-	//使用指定的加密方式(hs256)和声明类型创建新令牌
+	// 3. 使用 HS256 算法和配置中的密钥对 claims 进行签名
 	tokenStruct := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	//获得完整的签名的令牌
-	//return tokenStruct.SignedString(GetJWTSecret())
+	// 4. 获得完整的签名的令牌
 	return tokenStruct.SignedString([]byte(config.JwtOption.Secret))
 }
 
@@ -65,10 +66,12 @@ const (
 	CtxKeyIsAuthenticated = "isAuthenticated"
 )
 
-// OptionalJWT 可选的JWT认证中间件，总是尝试解析token
+// OptionalJWT 作为可选验证，无论是否提供令牌都会放行请求，但会在上下文中标记认证状态
 func OptionalJWT() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// 1. 从请求头的Authorization获取令牌
 		token := c.GetHeader("Authorization")
+		// 2. 没token就直接放行，有token就判断，反正这是可选校验
 		if token == "" {
 			// 未提供token，设置未认证状态
 			c.Set(CtxKeyIsAuthenticated, false)
@@ -77,7 +80,7 @@ func OptionalJWT() gin.HandlerFunc {
 			return
 		}
 
-		//处理Bearer token格式
+		// 2. 处理Bearer Token格式（去掉前缀"Bearer"）
 		if len(token) > 7 && token[:7] == "Bearer " {
 			token = token[7:]
 		} else {
@@ -111,7 +114,7 @@ func OptionalJWT() gin.HandlerFunc {
 	}
 }
 
-// RequireAuth 强制认证中间件，检查用户是否已登录
+// RequireAuth 作为强制验证，检查上下文中的认证状态，未认证则返回错误并拦截请求
 func RequireAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		isAuthenticated := c.GetBool(CtxKeyIsAuthenticated)
